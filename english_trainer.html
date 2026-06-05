@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>English Accent Trainer</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f4f7f6;
+            color: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .container {
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+            width: 100%;
+            max-width: 600px;
+        }
+        h1 {
+            font-size: 24px;
+            margin-bottom: 20px;
+            color: #2c3e50;
+            text-align: center;
+        }
+        label {
+            font-weight: 600;
+            display: block;
+            margin-top: 15px;
+            margin-bottom: 5px;
+            color: #34495e;
+        }
+        textarea {
+            width: 100%;
+            height: 120px;
+            padding: 12px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            box-sizing: border-box;
+            resize: vertical;
+            font-size: 16px;
+        }
+        select, input[type="number"] {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            font-size: 15px;
+            box-sizing: border-box;
+        }
+        .settings-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        .controls {
+            margin-top: 25px;
+            display: flex;
+            gap: 10px;
+        }
+        button {
+            flex: 1;
+            padding: 12px;
+            font-size: 16px;
+            font-weight: bold;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        #playBtn { background-color: #2ecc71; color: white; }
+        #playBtn:hover { background-color: #27ae60; }
+        #pauseBtn { background-color: #f1c40f; color: white; }
+        #pauseBtn:hover { background-color: #d4ac0d; }
+        #stopBtn { background-color: #e74c3c; color: white; }
+        #stopBtn:hover { background-color: #c0392b; }
+        button:disabled { background-color: #bdc3c7; cursor: not-allowed; }
+        .status {
+            margin-top: 15px;
+            text-align: center;
+            font-style: italic;
+            color: #7f8c8d;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>English Accent Trainer</h1>
+    
+    <label for="textInput">Paste your English text here:</label>
+    <textarea id="textInput" placeholder="Type or paste English sentences here..."></textarea>
+    
+    <label for="voiceSelect">Choose Accent:</label>
+    <select id="voiceSelect"><option value="">Loading accents...</option></select>
+    
+    <div class="settings-grid">
+        <div>
+            <label for="loopCount">Repeat Times:</label>
+            <input type="number" id="loopCount" value="3" min="1">
+        </div>
+        <div>
+            <label for="pauseTime">Pause Between (seconds):</label>
+            <input type="number" id="pauseTime" value="2" min="0" step="0.5">
+        </div>
+    </div>
+    
+    <div class="controls">
+        <button id="playBtn">Play</button>
+        <button id="pauseBtn" disabled>Pause</button>
+        <button id="stopBtn" disabled>Stop</button>
+    </div>
+
+    <div id="statusUpdate" class="status">Ready</div>
+</div>
+
+<script>
+    const synth = window.speechSynthesis;
+
+    const textInput = document.getElementById('textInput');
+    const voiceSelect = document.getElementById('voiceSelect');
+    const loopCountInput = document.getElementById('loopCount');
+    const pauseTimeInput = document.getElementById('pauseTime');
+    const playBtn = document.getElementById('playBtn');
+    const pauseBtn = document.getElementById('pauseBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const statusUpdate = document.getElementById('statusUpdate');
+
+    let voices = [];
+    let currentLoop = 0;
+    let totalLoops = 0;
+    let isPlaying = false;
+    let isPaused = false;
+    let timeoutId = null;
+
+    function populateVoiceList() {
+        voices = synth.getVoices().filter(voice => voice.lang.startsWith('en'));
+        voiceSelect.innerHTML = '';
+        
+        if (voices.length === 0) {
+            const option = document.createElement('option');
+            option.textContent = 'No English voices found';
+            voiceSelect.appendChild(option);
+            return;
+        }
+
+        voices.forEach((voice) => {
+            const option = document.createElement('option');
+            option.textContent = `${voice.name} (${voice.lang})`;
+            option.setAttribute('data-lang', voice.lang);
+            option.setAttribute('data-name', voice.name);
+            voiceSelect.appendChild(option);
+        });
+    }
+
+    populateVoiceList();
+    if (speechSynthesis.onvoiceschanged !== undefined) {
+        speechSynthesis.onvoiceschanged = populateVoiceList;
+    }
+
+    function speak() {
+        if (synth.speaking && !synth.paused) return;
+
+        const text = textInput.value.trim();
+        if (!text) {
+            alert("Please enter some text first!");
+            return;
+        }
+
+        isPlaying = true;
+        updateButtons();
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        const selectedVoiceName = voiceSelect.selectedOptions[0].getAttribute('data-name');
+        utterance.voice = voices.find(voice => voice.name === selectedVoiceName);
+
+        utterance.onend = () => {
+            currentLoop++;
+            if (currentLoop < totalLoops && isPlaying) {
+                const pauseMs = parseFloat(pauseTimeInput.value) * 1000;
+                statusUpdate.textContent = `Loop ${currentLoop} finished. Pausing for ${pauseTimeInput.value}s...`;
+                
+                timeoutId = setTimeout(() => {
+                    if (isPlaying) speakOneCycle(text, utterance.voice);
+                }, pauseMs);
+            } else {
+                resetPlayer("Finished practicing!");
+            }
+        };
+
+        utterance.onerror = () => resetPlayer("An error occurred.");
+
+        statusUpdate.textContent = `Playing loop ${currentLoop + 1} of ${totalLoops}...`;
+        synth.speak(utterance);
+    }
+
+    function speakOneCycle(text, voice) {
+        if (!isPlaying) return;
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.voice = voice;
+        utterance.onend = () => {
+            currentLoop++;
+            if (currentLoop < totalLoops && isPlaying) {
+                const pauseMs = parseFloat(pauseTimeInput.value) * 1000;
+                statusUpdate.textContent = `Loop ${currentLoop} finished. Pausing for ${pauseTimeInput.value}s...`;
+                timeoutId = setTimeout(() => {
+                    if (isPlaying) speakOneCycle(text, voice);
+                }, pauseMs);
+            } else {
+                resetPlayer("Finished practicing!");
+            }
+        };
+        statusUpdate.textContent = `Playing loop ${currentLoop + 1} of ${totalLoops}...`;
+        synth.speak(utterance);
+    }
+
+    playBtn.addEventListener('click', () => {
+        if (isPaused) {
+            synth.resume();
+            isPaused = false;
+            statusUpdate.textContent = `Resumed loop ${currentLoop + 1}...`;
+            updateButtons();
+        } else {
+            currentLoop = 0;
+            totalLoops = parseInt(loopCountInput.value) || 1;
+            speak();
+        }
+    });
+
+    pauseBtn.addEventListener('click', () => {
+        if (synth.speaking && !synth.paused) {
+            synth.pause();
+            isPaused = true;
+            statusUpdate.textContent = "Paused";
+            updateButtons();
+        }
+    });
+
+    stopBtn.addEventListener('click', () => {
+        resetPlayer("Stopped");
+    });
+
+    function resetPlayer(message) {
+        isPlaying = false;
+        isPaused = false;
+        currentLoop = 0;
+        clearTimeout(timeoutId);
+        synth.cancel();
+        statusUpdate.textContent = message;
+        updateButtons();
+    }
+
+    function updateButtons() {
+        playBtn.disabled = isPlaying && !isPaused;
+        pauseBtn.disabled = !isPlaying || isPaused;
+        stopBtn.disabled = !isPlaying;
+    }
+</script>
+</body>
+</html>
